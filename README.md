@@ -1,48 +1,164 @@
 # ORACINE
 
-A cinematic, ad-free streaming experience. No keys, no setup. Stream films and series instantly, download direct files, browse from any device.
+A cinematic, ad-free streaming platform with a public REST API for movie and TV metadata, direct stream sources, subtitles, and proxied playback.
 
-## Stack
+## Features
 
-- **TanStack Start** + React 19 (SSR + file-based routing)
-- **Tailwind v4** with a custom Neon Midnight design system (Bebas Neue + Barlow)
-- **Custom HLS.js player** with subtitle picker, multi-source switching, downloads
-- **Server-side scrapers** aggregating 11+ providers in parallel (2Embed, AutoEmbed, VidSrcCC, VidRock, MultiEmbed, CinemaOS, EmbedSu, Movieapiclub, VixSrc, VidZee, Uembed + Wyzie/LibreSubs)
-- **CORS-friendly streaming proxy** with automatic m3u8 rewriting
-- **Public REST API** at `/api/sources/*`, `/api/proxy`, `/api/download`
+- Aggregated direct stream sources for movies and TV episodes
+- Multi-language subtitle lookup
+- CORS-safe streaming proxy with automatic playlist rewriting
+- Direct file downloads
+- TMDB-powered search, discovery, and metadata
+- Live service status and cache stats
 
-## Deploy on Railway
+## API Reference
 
-1. Push this repo to GitHub.
-2. On [Railway](https://railway.com), create a new project from your GitHub repo.
-3. Railway will detect the `Dockerfile` automatically (config in `railway.json`).
-4. (Optional) Set environment variables:
-   - `TMDB_READ_ACCESS_TOKEN` — your TMDB v4 read access token (for metadata)
-   - `PORT` — Railway sets this automatically
-5. Deploy. The first build takes ~2–3 min.
+All endpoints return JSON (except `/api/proxy` and `/api/download`, which stream raw media) and support CORS.
 
-Stream URLs are auto-detected from the request origin — no hard-coded domains. Whether you deploy at `oracine.up.railway.app`, a custom domain, or move providers, the player and API just work.
+### Get movie sources
 
-## Local dev
-
-```bash
-bun install
-bun run dev
+```
+GET /api/movie/:tmdbId
 ```
 
-App boots on `http://localhost:8080` (or whatever Vite picks).
+Returns all available streams and subtitle tracks for a movie, looked up by its TMDB ID.
 
-## API endpoints
+**Example**
+```
+GET /api/movie/27205
+```
 
-See `/docs` once the app is running for full developer docs.
+---
 
-| Method | Path | What |
+### Get TV episode sources
+
+```
+GET /api/tv/:tmdbId/:season/:episode
+```
+
+Returns all available streams and subtitle tracks for a specific episode.
+
+**Example**
+```
+GET /api/tv/1396/1/1
+```
+
+---
+
+### Get sources (unified)
+
+```
+GET /api/sources/:type/:tmdbId?season=&episode=
+```
+
+`type` is either `movie` or `tv`. For TV, pass `season` and `episode` as query parameters.
+
+**Examples**
+```
+GET /api/sources/movie/27205
+GET /api/sources/tv/1396?season=1&episode=1
+```
+
+---
+
+### Get subtitles
+
+```
+GET /api/subtitles/:type/:tmdbId?season=&episode=
+```
+
+Returns merged, deduplicated subtitle tracks from all available subtitle providers.
+
+`type` is `movie` or `tv`. For TV, `season` and `episode` query parameters are required.
+
+**Examples**
+```
+GET /api/subtitles/movie/27205
+GET /api/subtitles/tv/1396?season=1&episode=1
+```
+
+---
+
+### Streaming proxy
+
+```
+GET /api/proxy?url=<encoded-url>&ref=<encoded-referer>&ua=<encoded-user-agent>
+```
+
+Proxies a video stream or playlist through ORACINE, rewriting `.m3u8` manifests so every referenced segment also routes through the proxy. Use this to play sources that block direct/cross-origin requests.
+
+| Param | Required | Description |
 | --- | --- | --- |
-| GET | `/api/sources/movie/:tmdbId` | All direct stream URLs + subs for a movie |
-| GET | `/api/sources/tv/:tmdbId?season=1&episode=1` | Same, for a TV episode |
-| GET | `/api/proxy?url=…&ref=…&ua=…` | CORS-safe streaming proxy w/ m3u8 rewriting |
-| GET | `/api/download?url=…&filename=…` | Same as proxy but with `Content-Disposition: attachment` |
+| `url` | yes | The upstream resource to proxy (URL-encoded) |
+| `ref` | no | Referer header to send upstream |
+| `ua` | no | User-Agent header to send upstream |
+
+---
+
+### Download
+
+```
+GET /api/download?url=<encoded-url>&filename=<name>&ref=<encoded-referer>&ua=<encoded-user-agent>
+```
+
+Same as the proxy, but responds with `Content-Disposition: attachment` so browsers save the file instead of playing it.
+
+| Param | Required | Description |
+| --- | --- | --- |
+| `url` | yes | The upstream resource to download (URL-encoded) |
+| `filename` | no | Suggested filename (defaults to `oracine-download`) |
+| `ref` | no | Referer header to send upstream |
+| `ua` | no | User-Agent header to send upstream |
+
+---
+
+### TMDB passthrough
+
+```
+GET /api/tmdb/*
+```
+
+Proxies TMDB's API for search, discovery, trending, genres, credits, and related metadata, so the client never needs its own TMDB key.
+
+**Examples**
+```
+GET /api/tmdb/search/movie?query=inception
+GET /api/tmdb/trending/movie/week
+GET /api/tmdb/movie/27205
+GET /api/tmdb/movie/27205/recommendations
+GET /api/tmdb/discover/movie?with_genres=28
+GET /api/tmdb/genres/movie
+```
+
+---
+
+### Service status
+
+```
+GET /api/status
+```
+
+Returns service health, a list of available routes, and cache statistics.
+
+## Usage
+
+All endpoints are plain HTTP `GET` requests — no API key or authentication required.
+
+```bash
+curl "https://your-deployment.example/api/sources/movie/27205"
+```
+
+```js
+const res = await fetch("https://your-deployment.example/api/sources/movie/27205");
+const data = await res.json();
+```
+
+To play a returned stream URL through the built-in proxy (recommended for cross-origin playback):
+
+```js
+const proxied = `/api/proxy?url=${encodeURIComponent(streamUrl)}`;
+```
 
 ## Notes
 
-ORACINE doesn't host any media. It aggregates publicly accessible streams from third-party providers. Use responsibly.
+ORACINE does not host any media itself. It aggregates and proxies publicly accessible streams and metadata from third-party providers. Use responsibly and in accordance with the terms of the services involved.
